@@ -8,25 +8,43 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
-// O_CLOEXEC
-//#include <asm-generic/fcntl.h>
-
 #include <unistd.h>
 #include <sys/ioctl.h>
 #include <errno.h>
 #include <xf86drm.h>
 #include <xf86drmMode.h>
-
-// rand
-#include <stdlib.h>
+#include <stdlib.h> // rand
 #include <QDebug>
 
+// constants
+const char* DRM_CARD_PATH = "/dev/dri/card0";
 
-#define ALIGN_ON_POW2(n, align) ((n + align - 1) & ~(align - 1))
+// member vars
+int drm_fd = 0;
+drmModeModeInfo    * __restrict chosen_resolution = NULL;
+drmModeConnector   * __restrict valid_connector   = NULL;
+drmModeEncoder     * __restrict screen_encoder    = NULL;
+drmModeCrtc        * __restrict crtc_to_restore   = NULL;
+struct drm_mode_create_dumb create_request;
+uint32_t frame_buffer_id = 0;
+uint8_t* primed_framebuffer = NULL;
+
+// function prototypes
+void could_not_map_or_export_buffer();
+void could_not_retrieve_current_ctrc();
+void could_not_add_or_alloc_frame_buffer();
+void could_not_add_buffer(int err);
+void could_not_alloc_buffer(int err);
+void could_not_retreive_encoder();
+void no_valid_resolution();
+void no_valid_connector();
+void cleanup_all();
+
 
 // Works on Rockchip systems but fail with ENOSYS on AMDGPU
 int main(int argc, char *argv[])
 {
+    qDebug() << "v27.01.2021";
     Q_UNUSED(argc);
     Q_UNUSED(argv);
 
@@ -42,14 +60,11 @@ int main(int argc, char *argv[])
      *   preferred resolution.
      */
     drmModeRes         * __restrict drm_resources;
-    drmModeConnector   * __restrict valid_connector   = NULL;
-    drmModeModeInfo    * __restrict chosen_resolution = NULL;
-    drmModeEncoder     * __restrict screen_encoder    = NULL;
 
     int ret = 0;
 
     /* Open the DRM device node and get a File Descriptor */
-    int const drm_fd = open("/dev/dri/card0", O_RDWR | O_CLOEXEC);
+    drm_fd = open(DRM_CARD_PATH, O_RDWR | O_CLOEXEC);
 
     if (drm_fd >= 0)
     {
@@ -73,11 +88,7 @@ int main(int argc, char *argv[])
         /* Bail out if nothing was connected */
         if (!valid_connector)
         {
-            /* Then there was no connectors,
-             * or no connector were connected */
-            qDebug() << __FUNCTION__ << __LINE__ << "No connectors or no connected connectors found...\n";
-            ret = -ENOLINK;
-            close(drm_fd);
+            no_valid_connector();
         }
         else
         {
@@ -95,10 +106,7 @@ int main(int argc, char *argv[])
             /* Bail out if there's no such thing as a "preferred resolution" */
             if (!chosen_resolution)
             {
-                qDebug() << __FUNCTION__ << __LINE__ << "No preferred resolution on the selected connector " << valid_connector->connector_id;
-                ret = -ENAVAIL;
-                drmModeFreeConnector(valid_connector);
-                close(drm_fd);
+                no_valid_resolution();
             }
             else
             {
@@ -110,15 +118,7 @@ int main(int argc, char *argv[])
                  * out quickly. */
                 if (!screen_encoder)
                 {
-                    qDebug("%s %d Could not retrieve the encoder for mode %s, on connector %u",
-                           __FUNCTION__,
-                           __LINE__,
-                           chosen_resolution->name,
-                           valid_connector->connector_id );
-                    ret = -ENOLINK;
-                    drmModeFreeModeInfo(chosen_resolution);
-                    drmModeFreeConnector(valid_connector);
-                    close(drm_fd);
+                    could_not_retreive_encoder();
                 }
                 else
                 {
@@ -127,7 +127,6 @@ int main(int argc, char *argv[])
                      * will be read and displayed on screen (the CRTC to be exact) */
 
                     /* Request a dumb buffer */
-                    struct drm_mode_create_dumb create_request;
                     memset(&create_request, 0, sizeof(create_request) );
                     create_request.width  = chosen_resolution->hdisplay;
                     create_request.height = chosen_resolution->vdisplay;
@@ -138,17 +137,7 @@ int main(int argc, char *argv[])
                     /* Bail out if we could not allocate a dumb buffer */
                     if (ret)
                     {
-                        qDebug("%s %d Dumb Buffer Object Allocation request of %ux%u@%u failed : %s\n",
-                               __FUNCTION__,
-                               __LINE__,
-                               create_request.width, create_request.height,
-                               create_request.bpp,
-                               strerror(ret)
-                               );
-                        drmModeFreeEncoder(screen_encoder);
-                        drmModeFreeModeInfo(chosen_resolution);
-                        drmModeFreeConnector(valid_connector);
-                        close(drm_fd);
+                        could_not_alloc_buffer(ret);
                     }
                     else
                     {
@@ -159,7 +148,6 @@ int main(int argc, char *argv[])
                          * Jokes aside, this other method takes well defined color formats
                          * as arguments instead of specifying the depth and BPP manually.
                          */
-                        uint32_t frame_buffer_id;
                         ret = drmModeAddFB
                         (
                             drm_fd,
@@ -176,14 +164,7 @@ int main(int argc, char *argv[])
                         /* Without framebuffer, we won't do anything so bail out ! */
                         if (ret)
                         {
-                            qDebug("%s %d Could not add a framebuffer using drmModeAddFB : %s\n",
-                                   __FUNCTION__,
-                                   __LINE__,
-                                   strerror(ret) );
-                            drmModeFreeEncoder(screen_encoder);
-                            drmModeFreeModeInfo(chosen_resolution);
-                            drmModeFreeConnector(valid_connector);
-                            close(drm_fd);
+                            could_not_add_buffer(ret);
                         }
                         else
                         {
@@ -194,28 +175,20 @@ int main(int argc, char *argv[])
 
                             if (!current_crtc_id)
                             {
-                                qDebug("%s %d The retrieved encoder has no CRTC attached... ?", __FUNCTION__, __LINE__);
-                                drmModeRmFB(drm_fd, frame_buffer_id);
-                                drmModeFreeEncoder(screen_encoder);
-                                drmModeFreeModeInfo(chosen_resolution);
-                                drmModeFreeConnector(valid_connector);
-                                close(drm_fd);
+                                qDebug("The current encoder has no CRTC attached... ?");
+                                could_not_retrieve_current_ctrc();
                             }
                             else
                             {
                                 /* Backup the informations of the CRTC to restore when we're done.
                                  * The most important piece seems to currently be the buffer ID.
                                  */
-                                drmModeCrtc * __restrict crtc_to_restore = drmModeGetCrtc(drm_fd, current_crtc_id);
+                                crtc_to_restore = drmModeGetCrtc(drm_fd, current_crtc_id);
 
                                 if (!crtc_to_restore)
                                 {
-                                    qDebug("%s %d Could not retrieve the current CRTC with a valid ID !\n", __FUNCTION__, __LINE__);
-                                    drmModeRmFB(drm_fd, frame_buffer_id);
-                                    drmModeFreeEncoder(screen_encoder);
-                                    drmModeFreeModeInfo(chosen_resolution);
-                                    drmModeFreeConnector(valid_connector);
-                                    close(drm_fd);
+                                    qDebug("Could not retrieve the current CRTC with a valid ID !\n");
+                                    could_not_retrieve_current_ctrc();
                                 }
                                 else
                                 {
@@ -247,27 +220,12 @@ int main(int argc, char *argv[])
                                      * purpose of our test */
                                     if (ret || dma_buf_fd < 0)
                                     {
-                                        qDebug("%s %d Could not export buffer : %s (%d) - FD : %d\n",
-                                               __FUNCTION__,
-                                               __LINE__,
+
+                                        qDebug("Could not export buffer : %s (%d) - FD : %d\n",
                                                strerror(ret), ret,
                                                dma_buf_fd );
 
-                                        struct drm_mode_destroy_dumb destroy_request;
-                                        memset(&destroy_request, 0 , sizeof(destroy_request));
-                                        destroy_request.handle = create_request.handle;
-                                        ioctl(drm_fd, DRM_IOCTL_MODE_DESTROY_DUMB, &destroy_request);
-                                        drmModeSetCrtc
-                                        (
-                                            drm_fd,
-                                            crtc_to_restore->crtc_id, crtc_to_restore->buffer_id,
-                                            0, 0, &valid_connector->connector_id, 1, &crtc_to_restore->mode
-                                        );
-                                        drmModeRmFB(drm_fd, frame_buffer_id);
-                                        drmModeFreeEncoder(screen_encoder);
-                                        drmModeFreeModeInfo(chosen_resolution);
-                                        drmModeFreeConnector(valid_connector);
-                                        close(drm_fd);
+                                        could_not_map_or_export_buffer();
                                     }
                                     else
                                     {
@@ -277,7 +235,7 @@ int main(int argc, char *argv[])
                                          * GPU with discrete memory. Meaning that it will surely fail with
                                          * Radeon, AMDGPU and Nouveau drivers for desktop cards ! */
                                         void *pMap = mmap(0, create_request.size, PROT_READ | PROT_WRITE, MAP_SHARED, dma_buf_fd, 0);
-                                        uint8_t* primed_framebuffer = static_cast<uint8_t*>(pMap);
+                                        primed_framebuffer = static_cast<uint8_t*>(pMap);
 
                                         ret = errno;
 
@@ -291,21 +249,7 @@ int main(int argc, char *argv[])
                                                 ret,
                                                 primed_framebuffer );
 
-                                            struct drm_mode_destroy_dumb destroy_request;
-                                            memset(&destroy_request, 0 , sizeof(destroy_request));
-                                            destroy_request.handle = create_request.handle;
-                                            ioctl(drm_fd, DRM_IOCTL_MODE_DESTROY_DUMB, &destroy_request);
-                                            drmModeSetCrtc
-                                            (
-                                                drm_fd,
-                                                crtc_to_restore->crtc_id, crtc_to_restore->buffer_id,
-                                                0, 0, &valid_connector->connector_id, 1, &crtc_to_restore->mode
-                                            );
-                                            drmModeRmFB(drm_fd, frame_buffer_id);
-                                            drmModeFreeEncoder(screen_encoder);
-                                            drmModeFreeModeInfo(chosen_resolution);
-                                            drmModeFreeConnector(valid_connector);
-                                            close(drm_fd);
+                                            could_not_map_or_export_buffer();
                                         }
                                         else
                                         {
@@ -376,23 +320,7 @@ int main(int argc, char *argv[])
                                                 pixel += diff_between_width_and_stride;
                                                 //LOG("pixel : %lu, size : %lu\n", pixel, size_in_pixels);
                                             }
-
-                                            struct drm_mode_destroy_dumb destroy_request;
-                                            memset(&destroy_request, 0 , sizeof(destroy_request));
-                                            destroy_request.handle = create_request.handle;
-                                            ioctl(drm_fd, DRM_IOCTL_MODE_DESTROY_DUMB, &destroy_request);
-                                            drmModeSetCrtc
-                                            (
-                                                drm_fd,
-                                                crtc_to_restore->crtc_id, crtc_to_restore->buffer_id,
-                                                0, 0, &valid_connector->connector_id, 1, &crtc_to_restore->mode
-                                            );
-                                            munmap(primed_framebuffer, create_request.size);
-                                            drmModeRmFB(drm_fd, frame_buffer_id);
-                                            drmModeFreeEncoder(screen_encoder);
-                                            drmModeFreeModeInfo(chosen_resolution);
-                                            //drmModeFreeConnector(valid_connector); // double free error for some reason
-                                            close(drm_fd);
+                                            cleanup_all();
                                         } // ~ successfully mapped buffer
                                     } // ~ successfully export buffer
                                 } // ~ crtc_to_restore is valid
@@ -412,3 +340,129 @@ int main(int argc, char *argv[])
 }
 
 
+/**
+ * @brief could_not_map_or_export_buffer - cleanup when the buffer could not be mapped or exported
+ */
+void could_not_map_or_export_buffer()
+{
+    struct drm_mode_destroy_dumb destroy_request;
+    memset(&destroy_request, 0 , sizeof(destroy_request));
+    destroy_request.handle = create_request.handle;
+    ioctl(drm_fd, DRM_IOCTL_MODE_DESTROY_DUMB, &destroy_request);
+    drmModeSetCrtc
+    (
+        drm_fd,
+        crtc_to_restore->crtc_id, crtc_to_restore->buffer_id,
+        0, 0, &valid_connector->connector_id, 1, &crtc_to_restore->mode
+    );
+    drmModeRmFB(drm_fd, frame_buffer_id);
+    drmModeFreeEncoder(screen_encoder);
+    drmModeFreeModeInfo(chosen_resolution);
+    drmModeFreeConnector(valid_connector);
+    close(drm_fd);
+}
+
+/**
+ * @brief could_not_retrieve_current_ctrc - cleanup when the curr crtc could not be found
+ */
+void could_not_retrieve_current_ctrc()
+{
+
+    drmModeRmFB(drm_fd, frame_buffer_id);
+    drmModeFreeEncoder(screen_encoder);
+    drmModeFreeModeInfo(chosen_resolution);
+    drmModeFreeConnector(valid_connector);
+    close(drm_fd);
+}
+
+/**
+ * @brief could_not_add_or_alloc_frame_buffer - cleanup when the framebuffer could not be added or allocated
+ */
+void could_not_add_or_alloc_frame_buffer()
+{
+    drmModeFreeEncoder(screen_encoder);
+    drmModeFreeModeInfo(chosen_resolution);
+    drmModeFreeConnector(valid_connector);
+    close(drm_fd);
+}
+
+/**
+ * @brief could_not_add_buffer- cleanup when the dumb buffer could not be added
+ * @param err - errno code
+ */
+void could_not_add_buffer(int err)
+{
+    qDebug("Could not add a framebuffer using drmModeAddFB : %s\n",
+           strerror(err) );
+    could_not_add_or_alloc_frame_buffer();
+}
+
+/**
+ * @brief could_not_alloc_buffer - cleanup when the dumb buffer could not be allocated
+ * @param err - errno code
+ */
+void could_not_alloc_buffer(int err)
+{
+    qDebug("Dumb Buffer Object Allocation request of %ux%u@%u failed : %s\n",
+           create_request.width, create_request.height,
+           create_request.bpp,
+           strerror(err)
+           );
+    could_not_add_or_alloc_frame_buffer();
+}
+
+/**
+ * @brief could_not_retreive_encoder - cleanup when the encoder could not be retreived
+ */
+void could_not_retreive_encoder()
+{
+    qDebug("Could not retrieve the encoder for mode %s, on connector %u",
+           chosen_resolution->name,
+           valid_connector->connector_id);
+
+    drmModeFreeModeInfo(chosen_resolution);
+    drmModeFreeConnector(valid_connector);
+    close(drm_fd);
+}
+
+/**
+ * @brief no_valid_resolution - cleanup when the resolution is invalid
+ */
+void no_valid_resolution()
+{
+    qDebug() << "No preferred resolution on the selected connector " << valid_connector->connector_id;
+    drmModeFreeConnector(valid_connector);
+    close(drm_fd);
+}
+
+/**
+ * @brief no_valid_connector - valid connector not found
+ */
+void no_valid_connector()
+{
+    qDebug() << "No connectors or no connected connectors found...\n";
+    close(drm_fd);
+}
+
+/**
+ * @brief cleanup_all - cleanup everything on a successful transaction
+ */
+void cleanup_all()
+{
+    struct drm_mode_destroy_dumb destroy_request;
+    memset(&destroy_request, 0 , sizeof(destroy_request));
+    destroy_request.handle = create_request.handle;
+    ioctl(drm_fd, DRM_IOCTL_MODE_DESTROY_DUMB, &destroy_request);
+    drmModeSetCrtc
+    (
+        drm_fd,
+        crtc_to_restore->crtc_id, crtc_to_restore->buffer_id,
+        0, 0, &valid_connector->connector_id, 1, &crtc_to_restore->mode
+    );
+    munmap(primed_framebuffer, create_request.size);
+    drmModeRmFB(drm_fd, frame_buffer_id);
+    drmModeFreeEncoder(screen_encoder);
+    drmModeFreeModeInfo(chosen_resolution);
+    //drmModeFreeConnector(valid_connector); // double free error for some reason
+    close(drm_fd);
+}
