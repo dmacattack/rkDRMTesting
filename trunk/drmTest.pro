@@ -9,7 +9,8 @@ CONFIG -= app_bundle
 
 TEMPLATE = app
 
-SOURCES += main.cpp
+SOURCES += main.cpp \
+    drmcapture.cpp
 
 # The following define makes your compiler emit warnings if you use
 # any feature of Qt which as been marked deprecated (the exact warnings
@@ -31,4 +32,7 @@ unix {
     LIBS += -L/opt/rockchip/output/host/arm-buildroot-linux-gnueabihf/sysroot/usr/lib
     LIBS += -ldrm
 }
+
+HEADERS += \
+    drmcapture.hpp
 
