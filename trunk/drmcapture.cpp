@@ -1,6 +1,7 @@
 #include "drmcapture.hpp"
 #include <QDebug>
-#include <QFile>
+#include <sys/mman.h>
+#include "filehandler.hpp"
 
 #define DBG_BLOCK 0
 
@@ -28,9 +29,11 @@ DRMCapture::DRMCapture()
 
 /**
  * @brief DRMCapture::capture - execute the capture process
+ * @returns DRMBuffer object
  */
-void DRMCapture::capture()
+DRMBuffer *DRMCapture::capture()
 {
+    DRMBuffer *pBuffer = NULL;
     /* DRM is based on the fact that you can connect multiple screens,
      * on multiple different connectors which have, of course, multiple
      * encoders that transform CRTC (The screen final buffer where all
@@ -211,7 +214,7 @@ void DRMCapture::capture()
 
                         // get the memory
                         struct drm_mode_map_dumb mreq;
-                        uint8_t *map = NULL;
+                        //uint8_t *map = NULL;
 
                         memset(&mreq, 0, sizeof(mreq));
                         mreq.handle = pFb->handle;
@@ -225,19 +228,8 @@ void DRMCapture::capture()
 #if DBG_BLOCK
                         qDebug() << "frame buffer size = " << size;
 #endif
-
-                        map = (uint8_t*) mmap(0, size, PROT_READ | PROT_WRITE, MAP_SHARED, drm_fd, mreq.offset);
-                        if (map == MAP_FAILED)
-                        {
-                            qFatal("map failed");
-                        }
-                        else if(map == NULL)
-                        {
-                            qFatal("map is null");
-                        }
-
-                        // copy it to a file
-                        writeToFile("/mnt/userdata/test2.data", map, size);
+                        // create a buffer
+                        pBuffer = new DRMBuffer(size, drm_fd, mreq.offset);
                     } // ~pcrtc
                 } // ~screen_encoder
             } // ~chosen_resolution
@@ -253,6 +245,8 @@ void DRMCapture::capture()
     {
         qDebug() << __FUNCTION__ << __LINE__ << "Could not open /dev/dri/card0 : %m\n";
     }
+
+    return pBuffer;
 }
 
 /**
@@ -380,27 +374,3 @@ void DRMCapture::cleanup_all()
     close(drm_fd);
 }
 
-/**
- * @brief DRMCapture::writeToFile - write a buffer to a file
- * @param filePath - file path to write
- * @param pBuf - pointer to buffer
- * @param bufSize - buffer size in bytes
- */
-void DRMCapture::writeToFile(const QString &filePath, uint8_t *pBuf, size_t bufSize)
-{
-    // copy it to a file
-    QFile file(filePath);
-    if (!file.open(QIODevice::WriteOnly))
-    {
-        qCritical() << "couldnt open test file";
-    }
-    else
-    {
-        qDebug() << "saving buffer to file: " << filePath;
-        // write in the data
-        file.write((char*)pBuf, bufSize);
-
-        // close the file
-        file.close();
-    }
-}

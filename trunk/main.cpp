@@ -2,6 +2,7 @@
 #include <QDebug>
 #include "drmcapture.hpp"
 #include "utility/cmdoptions.hpp"
+#include "filehandler.hpp"
 
 // Works on Rockchip systems but fail with ENOSYS on AMDGPU
 int main(int argc, char *argv[])
@@ -16,7 +17,12 @@ int main(int argc, char *argv[])
 
     // init the capture class
     DRMCapture *pCapture = new DRMCapture();
-    pCapture->capture();
+    DRMBuffer *pBuf = pCapture->capture();
+    qDebug() << "buf is null" << (pBuf  == NULL);
+    if (pBuf && pBuf->isValid())
+    {
+        FileHandler::writeToFile("/mnt/userdata/test3.data", pBuf);
+    }
 
-    return qCoreApp.exec();
+    //return qCoreApp.exec();
 }

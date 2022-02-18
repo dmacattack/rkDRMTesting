@@ -11,7 +11,9 @@ TEMPLATE = app
 
 SOURCES += main.cpp \
     drmcapture.cpp \
-    utility/cmdoptions.cpp
+    utility/cmdoptions.cpp \
+    filehandler.cpp \
+    drmbuffer.cpp
 
 # The following define makes your compiler emit warnings if you use
 # any feature of Qt which as been marked deprecated (the exact warnings
@@ -36,5 +38,7 @@ unix {
 
 HEADERS += \
     drmcapture.hpp \
-    utility/cmdoptions.hpp
+    utility/cmdoptions.hpp \
+    filehandler.hpp \
+    drmbuffer.hpp
 

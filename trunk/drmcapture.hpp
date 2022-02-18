@@ -8,7 +8,6 @@
 #include <stdio.h>
 #include <libdrm/drm.h>
 #include <stdint.h>
-#include <sys/mman.h>
 #include <string.h>
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -20,12 +19,16 @@
 #include <xf86drmMode.h>
 #include <stdlib.h> // rand
 #include <QTextStream>
+#include "drmbuffer.hpp"
 
+/**
+ * @brief The DRMCapture class - object to capture a DRM framebuffer
+ */
 class DRMCapture
 {
 public:
     DRMCapture();
-    void capture();
+    DRMBuffer* capture();
 
 private:
     void could_not_map_or_export_buffer();
@@ -37,8 +40,6 @@ private:
     void no_valid_resolution();
     void no_valid_connector();
     void cleanup_all();
-    void writeToFile(const QString &filePath, uint8_t *pBuf, size_t bufSize);
-
 
 private:
     int drm_fd;
