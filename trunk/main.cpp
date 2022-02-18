@@ -1,6 +1,7 @@
 #include <QCoreApplication>
 #include <QDebug>
 #include "drmcapture.hpp"
+#include "utility/cmdoptions.hpp"
 
 // Works on Rockchip systems but fail with ENOSYS on AMDGPU
 int main(int argc, char *argv[])
@@ -11,12 +12,11 @@ int main(int argc, char *argv[])
     QCoreApplication qCoreApp(argc, argv);
 
     // provide cmd line args to the cmdOptions class TODO
-    //CmdOptions::setOpts(argc, argv);
+    CmdOptions::setCmdOptions(qCoreApp);
 
     // init the capture class
     DRMCapture *pCapture = new DRMCapture();
     pCapture->capture();
-
 
     return qCoreApp.exec();
 }
