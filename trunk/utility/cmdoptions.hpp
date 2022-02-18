@@ -13,6 +13,7 @@ public:
     // getters
     static QString configFilePath() { return mConfigFilePath; }
     static QString outputFormat()   { return mOutputFmt;      }
+    static int     imageRotation()  { return mRotation;       }
 
 private:
     // class is intended to be statically called
@@ -25,6 +26,7 @@ private:
     // static members for cmd line data
     static QString mConfigFilePath;
     static QString mOutputFmt;
+    static int mRotation;
 };
 
 #endif // CMDOPTIONS_H
