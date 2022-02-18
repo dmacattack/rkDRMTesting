@@ -2,6 +2,8 @@
 #include <QDebug>
 #include <QFile>
 
+#define DBG_BLOCK 0
+
 // anonymous namespace
 namespace
 {
@@ -104,7 +106,9 @@ void DRMCapture::capture()
                 {
                     // get the current crtc id
                     uint32_t current_crtc_id = screen_encoder->crtc_id;
+#if DBG_BLOCK
                     qDebug() << "current crtc id = " << current_crtc_id;
+#endif
 
                     drmModeCrtcPtr pcrtc = drmModeGetCrtc(drm_fd, current_crtc_id);
 
@@ -116,7 +120,9 @@ void DRMCapture::capture()
                     {
 
                         uint32_t bufId = pcrtc->buffer_id;
+#if DBG_BLOCK
                         qDebug() << "crtc is not null, buffer id = " << bufId;
+#endif
 
 // ============================================================================================
                         // get the planes
@@ -127,6 +133,9 @@ void DRMCapture::capture()
                         {
                             qFatal("plane resources is null ");
                         }
+
+#if DBG_BLOCK
+                        // print out the available planes
 
                         qDebug() << "there are " << plane_res->count_planes << "planes";
                         drmModePlanePtr plane = NULL;
@@ -151,6 +160,10 @@ void DRMCapture::capture()
                                     plane->crtc_y
                                     );
                         }
+#endif
+
+#if DBG_BLOCK
+                        // uncomment this to allow manual user selection of the plane.
 
                         // TODO error check on the plane
                         qDebug() << "which fbid should we use ? ";
@@ -167,11 +180,17 @@ void DRMCapture::capture()
                             fbid = qtin.readLine().trimmed().toInt();
                         }
 
+                        qDebug() << "get the framebuffer from the fbid " << fbid;
+#else
+                        // use the framebuffer id
+                        int fbid = static_cast<int>(bufId);
+#endif
+
 // ============================================================================================
                         // get the framebuffer from the given id
 // ============================================================================================
 
-                        qDebug() << "get the framebuffer from the fbid " << fbid;
+
                         drmModeFBPtr pFb = drmModeGetFB(drm_fd, fbid);
 
                         if (pFb == NULL)
@@ -179,6 +198,7 @@ void DRMCapture::capture()
                             qFatal("fb is null");
                         }
 
+#if DBG_BLOCK
                         qDebug("framebuffer wxh @bpp = %ux%u @%u.pitch = %u. depth = %u. handle = %u",
                                pFb->width,
                                pFb->height,
@@ -187,6 +207,7 @@ void DRMCapture::capture()
                                pFb->depth,
                                pFb->handle
                                );
+#endif
 
                         // get the memory
                         struct drm_mode_map_dumb mreq;
@@ -201,7 +222,9 @@ void DRMCapture::capture()
                         }
 
                         size_t size = pFb->height * pFb->pitch;
+#if DBG_BLOCK
                         qDebug() << "frame buffer size = " << size;
+#endif
 
                         map = (uint8_t*) mmap(0, size, PROT_READ | PROT_WRITE, MAP_SHARED, drm_fd, mreq.offset);
                         if (map == MAP_FAILED)
@@ -214,22 +237,16 @@ void DRMCapture::capture()
                         }
 
                         // copy it to a file
-                        writeToFile("/mnt/userdata/test.data", map, size);
-
-                        // emergency stop
-                        qFatal("stop");
+                        writeToFile("/mnt/userdata/test2.data", map, size);
                     } // ~pcrtc
                 } // ~screen_encoder
             } // ~chosen_resolution
 
-
-            qDebug("\n\n\n");
             // cleanup
             drmModeFreeEncoder(screen_encoder);
             drmModeFreeModeInfo(chosen_resolution);
-            drmModeFreeConnector(valid_connector);
+            // drmModeFreeConnector(valid_connector);  // throws a double free or corruption error. TODO figure out why
             close(drm_fd);
-
         } // ~valid_connector
     } // ~valid_fd
     else
@@ -372,7 +389,7 @@ void DRMCapture::cleanup_all()
 void DRMCapture::writeToFile(const QString &filePath, uint8_t *pBuf, size_t bufSize)
 {
     // copy it to a file
-    QFile file("/mnt/userdata/test.data");
+    QFile file(filePath);
     if (!file.open(QIODevice::WriteOnly))
     {
         qCritical() << "couldnt open test file";
