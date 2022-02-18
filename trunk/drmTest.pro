@@ -10,7 +10,8 @@ CONFIG -= app_bundle
 TEMPLATE = app
 
 SOURCES += main.cpp \
-    drmcapture.cpp
+    drmcapture.cpp \
+    utility/cmdoptions.cpp
 
 # The following define makes your compiler emit warnings if you use
 # any feature of Qt which as been marked deprecated (the exact warnings
@@ -34,5 +35,6 @@ unix {
 }
 
 HEADERS += \
-    drmcapture.hpp
+    drmcapture.hpp \
+    utility/cmdoptions.hpp
 
