@@ -21,8 +21,15 @@ int main(int argc, char *argv[])
     qDebug() << "buf is null" << (pBuf  == NULL);
     if (pBuf && pBuf->isValid())
     {
-        FileHandler::writeToFile("/mnt/userdata/test3.data", pBuf);
+        FileHandler::writeToFile("/mnt/userdata/test4.data", pBuf);
+
+        qDebug() << "waiting a few seconds before capturing another";
+        usleep(5000000); // should be 5s
+
+        FileHandler::writeToFile("/mnt/userdata/test5.data", pBuf);
     }
+
+    delete pBuf;
 
     //return qCoreApp.exec();
 }
