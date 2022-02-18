@@ -13,7 +13,15 @@ SOURCES += main.cpp \
     drmcapture.cpp \
     utility/cmdoptions.cpp \
     filehandler.cpp \
-    drmbuffer.cpp
+    drmbuffer.cpp \
+    gsthandler.cpp
+
+HEADERS += \
+    drmcapture.hpp \
+    utility/cmdoptions.hpp \
+    filehandler.hpp \
+    drmbuffer.hpp \
+    gsthandler.hpp
 
 # The following define makes your compiler emit warnings if you use
 # any feature of Qt which as been marked deprecated (the exact warnings
@@ -26,19 +34,27 @@ DEFINES += QT_DEPRECATED_WARNINGS
 # You can also select to disable deprecated APIs only up to a certain version of Qt.
 #DEFINES += QT_DISABLE_DEPRECATED_BEFORE=0x060000    # disables all the APIs deprecated before Qt 6.0.0
 
-# add paths
-INCLUDEPATH += /opt/rockchip/output/host/arm-buildroot-linux-gnueabihf/sysroot/usr/include/libdrm
-INCLUDEPATH += /opt/rockchip/output/host/arm-buildroot-linux-gnueabihf/sysroot/usr/include/drm
-INCLUDEPATH += /opt/rockchip/output/host/arm-buildroot-linux-gnueabihf/sysroot/usr/include
+# drm paths
+INCLUDEPATH += usr/include/libdrm
+INCLUDEPATH += $$[QT_SYSROOT]/usr/include/drm
+INCLUDEPATH += usr/include
+
+# gstreamer paths
+INCLUDEPATH += usr/include/gstreamer-1.0
+INCLUDEPATH += usr/include/glib-2.0
+INCLUDEPATH += usr/lib/x86_64-linux-gnu/glib-2.0
 
 unix {
-    LIBS += -L/opt/rockchip/output/host/arm-buildroot-linux-gnueabihf/sysroot/usr/lib
+    LIBS += -L$$[QT_SYSROOT]/usr/lib
     LIBS += -ldrm
 }
 
-HEADERS += \
-    drmcapture.hpp \
-    utility/cmdoptions.hpp \
-    filehandler.hpp \
-    drmbuffer.hpp
+unix {
+    LIBS += -lgstreamer-1.0 -lgobject-2.0 -lglib-2.0
+}
+
+unix {
+    CONFIG += link_pkgconfig
+    PKGCONFIG += gstreamer-1.0 gstreamer-app-1.0
+}
 
