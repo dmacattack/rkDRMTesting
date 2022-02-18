@@ -15,6 +15,8 @@
 #include <xf86drmMode.h>
 #include <stdlib.h> // rand
 #include <QDebug>
+#include <QFile>
+#include <QTextStream>
 
 // constants
 const char* DRM_CARD_PATH = "/dev/dri/card0";
@@ -44,7 +46,7 @@ void cleanup_all();
 // Works on Rockchip systems but fail with ENOSYS on AMDGPU
 int main(int argc, char *argv[])
 {
-    qDebug() << "v27.01.2021";
+    qDebug() << "v01.02.2021";
     Q_UNUSED(argc);
     Q_UNUSED(argv);
 
@@ -122,6 +124,292 @@ int main(int argc, char *argv[])
                 }
                 else
                 {
+                    // get the current crtc id
+                    uint32_t current_crtc_id = screen_encoder->crtc_id;
+                    qDebug() << "current crtc id = " << current_crtc_id;
+
+                    drmModeCrtcPtr pcrtc = drmModeGetCrtc(drm_fd, current_crtc_id);
+
+                    if (pcrtc == NULL)
+                    {
+                        qDebug() << "ctrc is null";
+                    }
+                    else
+                    {
+
+                        uint32_t bufId = pcrtc->buffer_id;
+                        qDebug() << "crtc is not null, buffer id = " << bufId;
+
+// ============================================================================================
+                        // get the planes
+// ============================================================================================
+                        drmModePlaneResPtr plane_res = drmModeGetPlaneResources(drm_fd);
+
+                        if (plane_res == NULL)
+                        {
+                            return EXIT_FAILURE;
+                        }
+
+                        qDebug() << "there are " << plane_res->count_planes << "planes";
+                        drmModePlanePtr plane = NULL;
+                        for (uint32_t i = 0 ; i < plane_res->count_planes; i++)
+                        {
+
+                            plane = drmModeGetPlane(drm_fd, plane_res->planes[i]);
+                            if (!plane)
+                            {
+                                qDebug("Failed to get plane %d: %s.",
+                                       plane_res->planes[i],
+                                       strerror(errno));
+                                plane = NULL;
+                                continue;
+                            }
+
+                            qDebug( "Plane_id=%u CRTC_ID=%u FB_ID=%u. crtc x,y = %u,%u",
+                                   plane->plane_id,
+                                    plane->crtc_id,
+                                    plane->fb_id,
+                                    plane->crtc_x,
+                                    plane->crtc_y
+                                    );
+                        }
+
+                        // TODO error check on the plane
+                        qDebug() << "which fbid should we use ? ";
+                        QTextStream qtin(stdin);
+                        QString input = qtin.readLine().trimmed();
+                        int fbid = 0;
+                        if (input.isEmpty())
+                        {
+                            qDebug() << "using the framebuffer ID: " << bufId;
+                            fbid = static_cast<int>(bufId);
+                        }
+                        else
+                        {
+                            fbid = qtin.readLine().trimmed().toInt();
+                        }
+
+// ============================================================================================
+                        // get the framebuffer from the given id
+// ============================================================================================
+
+
+#if 1
+                        qDebug() << "get the framebuffer from the fbid " << fbid;
+                        drmModeFBPtr pFb = drmModeGetFB(drm_fd, fbid);
+#else
+                        qDebug() << "get the framebuffer from the plane";
+                        drmModeFBPtr pFb = drmModeGetFB(drm_fd, plane->fb_id);
+#endif
+                        if (pFb == NULL)
+                        {
+                            qFatal("fb is null");
+                        }
+
+                        qDebug("framebuffer wxh @bpp = %ux%u @%u.pitch = %u. depth = %u. handle = %u",
+                               pFb->width,
+                               pFb->height,
+                               pFb->bpp,
+                               pFb->pitch,
+                               pFb->depth,
+                               pFb->handle
+                               );
+
+                        // get the memory
+                        struct drm_mode_map_dumb mreq;
+                        uint8_t *map;
+
+                        memset(&mreq, 0, sizeof(mreq));
+                        mreq.handle = pFb->handle;
+                        ret = drmIoctl(drm_fd, DRM_IOCTL_MODE_MAP_DUMB, &mreq);
+                        if (ret)
+                        {
+                            qFatal("error %s", strerror(errno));
+                        }
+
+                        size_t size = pFb->height * pFb->pitch;
+                        qDebug() << "frame buffer size = " << size;
+
+                        map = (uint8_t*) mmap(0, size, PROT_READ | PROT_WRITE, MAP_SHARED, drm_fd, mreq.offset);
+                        if (map == MAP_FAILED)
+                        {
+                            qFatal("map failed");
+                        }
+                        else if(map == NULL)
+                        {
+                            qFatal("map is null");
+                        }
+
+#if 0
+                        // paint on the screen
+
+                        qDebug() << "paint on the screen";
+
+                        uint32_t const bytes_per_pixel = 4;
+                        uint8_t r,g,b;
+                        uint32_t ht = 100; //pFb->height;
+                        uint32_t wd = 100; //pFb->width;
+                        r = 0x00;
+                        g = 0xff;
+                        b = 0x00;
+                        uint32_t color = (r << 16) | (g << 8) | b;
+
+                        /* Pitch is the stride in bytes.
+                         * However, for our purpose we'd like to know the stride in pixels.
+                         * So we'll divide the pitch (in bytes) by the number of bytes
+                         * composing a pixel to get that information.
+                         */
+                        uint32_t const stride_pixel = pFb->pitch / bytes_per_pixel;
+                        uint32_t const width_pixel  = pFb->width;
+
+                        qDebug() << "stride_pixel = " << stride_pixel;
+                        qDebug() << "width_pixel = " << width_pixel;
+
+                        /*
+                        for (uint32_t j = 0 ; j < ht; j++)
+                        {
+                            for (uint32_t i = 0 ; i < wd; i++)
+                            {
+                                ((uint32_t *) map)[off] = color;
+                            }
+                        }
+                        */
+
+#endif
+#if 1
+                        // copy it to a file
+                        QFile file("/mnt/userdata/test.data");
+                        if (!file.open(QIODevice::WriteOnly))
+                        {
+                            qCritical() << "couldnt open test file";
+                        }
+                        else
+                        {
+                            qDebug() << "saving to a file";
+                            // pointer to the data
+
+                            // write in the data
+
+                            file.write((char*)map, size);
+
+
+                            // close the file
+                            file.close();
+                        }
+#endif
+
+
+                        qFatal("stop");
+
+#if 0
+                        // request a prime handle
+                        struct drm_prime_handle prime_request =
+                        {
+                            .handle = pFb->handle,
+                            .flags  = DRM_CLOEXEC | DRM_RDWR,
+                            .fd     = -1
+                        };
+
+                        ret = ioctl(drm_fd, DRM_IOCTL_PRIME_HANDLE_TO_FD, &prime_request);
+                        qFatal("primehandle = %d %d ", ret, prime_request.handle );
+
+
+
+                        int dma_buf_fd = -1;
+                        int resp = drmPrimeHandleToFD(drm_fd, prime_request.handle, O_RDONLY, &dma_buf_fd);
+
+                        qDebug() << "convert handle to fd resp" << resp << "dma_fd = " << dma_buf_fd;
+
+                        qFatal("exit");
+
+                        /* If we could not export the buffer, bail out since that's the
+                         * purpose of our test */
+                        if (ret || dma_buf_fd < 0)
+                        {
+
+                            qDebug("Could not export buffer : %s (%d) - FD : %d\n",
+                                   strerror(ret), ret,
+                                   dma_buf_fd );
+
+                            could_not_map_or_export_buffer();
+                        }
+                        else
+                        {
+                            // map the buffer
+                            size_t len = pFb->width * pFb->height * 4;
+                            qDebug() << "buffer size = " << len;
+                            void *pMap = mmap(0, len, PROT_READ | PROT_WRITE, MAP_SHARED, dma_buf_fd, 0);
+                            char* pData = static_cast<char*>(pMap);
+
+                            if (pData == NULL)
+                            {
+                                qDebug() << "mmap is NULL";
+                            }
+                            else if (pData == MAP_FAILED)
+                            {
+                                qDebug() << "mmap is FAILED" << strerror(errno);
+                            }
+                            else
+                            {
+
+                                qDebug() << "mmap is not null !!!!";
+
+                                // change some pixels
+                                memset(pData, 0xff00ff00, len/2);
+
+#if 0
+                                for (int i = 0; i < 100; i ++)
+                                {
+                                    qDebug("%d) 0x%08X", i, pData[i]);
+                                }
+#endif
+
+#if 0
+                                QFile file("/mnt/userdata/test.data");
+                                if (!file.open(QIODevice::WriteOnly))
+                                {
+                                    qCritical() << "couldnt open test file";
+                                }
+                                else
+                                {
+                                    qDebug() << "saving to a file";
+                                    // pointer to the data
+
+                                    // write in the data
+
+                                    file.write(pData, len);
+
+
+                                    // close the file
+                                    file.close();
+                                }
+
+#endif
+                                munmap(pMap, len);
+                            }
+                        }
+#endif
+                    }
+
+
+
+
+
+                    //drmModeFBPtr pBuf = drmModeGetFB(drm_fd, bufId);
+
+
+                    qDebug("\n\n\n");
+                    // cleanup
+                    drmModeFreeEncoder(screen_encoder);
+                    drmModeFreeModeInfo(chosen_resolution);
+                    drmModeFreeConnector(valid_connector);
+                    close(drm_fd);
+
+
+
+#if 0
+                    return 0;
+
                     /* We're almost done with KMS. We'll now allocate a "dumb" buffer on
                      * the GPU, and use it as a "frame buffer", that is something that
                      * will be read and displayed on screen (the CRTC to be exact) */
@@ -150,14 +438,14 @@ int main(int argc, char *argv[])
                          */
                         ret = drmModeAddFB
                         (
-                            drm_fd,
-                            chosen_resolution->hdisplay,
-                            chosen_resolution->vdisplay,
-                            24,
-                            32,
-                            create_request.pitch,
-                            create_request.handle,
-                            &frame_buffer_id
+                            drm_fd,                        // file descriptor
+                            chosen_resolution->hdisplay,   // width
+                            chosen_resolution->vdisplay,   // height
+                            24,                            // depth
+                            32,                            // bits per pixel
+                            create_request.pitch,          // pitch
+                            create_request.handle,         // handle
+                            &frame_buffer_id               // fb id populated by this call
                         );
 
 
@@ -235,7 +523,7 @@ int main(int argc, char *argv[])
                                          * GPU with discrete memory. Meaning that it will surely fail with
                                          * Radeon, AMDGPU and Nouveau drivers for desktop cards ! */
                                         void *pMap = mmap(0, create_request.size, PROT_READ | PROT_WRITE, MAP_SHARED, dma_buf_fd, 0);
-                                        primed_framebuffer = static_cast<uint8_t*>(pMap);
+                                        const char* pData = static_cast<char*>(pMap); = static_cast<uint8_t*>(pMap);
 
                                         ret = errno;
 
@@ -327,6 +615,7 @@ int main(int argc, char *argv[])
                             } // ~ successfully retrieved ctrc encoder
                         } // ~successfully added a framebuffer
                     } // ~ buffer successfully allocated
+#endif
                 } // ~valid screen_encoder
             } // ~valid_resolution
         } // ~valid_connector
