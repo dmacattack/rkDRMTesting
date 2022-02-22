@@ -23,20 +23,24 @@ int main(int argc, char *argv[])
     // init the capture class
     DRMCapture *pCapture = new DRMCapture();
     DRMBuffer *pBuf = pCapture->capture();
-    qDebug() << "buf is null" << (pBuf  == NULL);
-    if (pBuf && pBuf->isValid())
+    if (pBuf == NULL)
     {
-      //  FileHandler::writeToFile("/mnt/userdata/test4.data", pBuf);
-      //
-      //  qDebug() << "waiting a few seconds before capturing another";
-      //  usleep(5000000); // should be 5s
-      //
-      //  FileHandler::writeToFile("/mnt/userdata/test5.data", pBuf);
+        qCritical() << "DRM Buffer is not accessible. Exiting";
+        qCoreApp.exit(0);
+    }
+    else if (pBuf->isValid())
+    {
+        qCritical() << "DRM buffer is not valid. Exiting";
+        qCoreApp.exit(0);
+    }
+    else
+    {
         gsthandler *pGst = new gsthandler(pBuf);
         pGst->start();
     }
 
     //delete pBuf;
 
-    return qCoreApp.exec();
+    //return qCoreApp.exec();
+    return 0;
 }
