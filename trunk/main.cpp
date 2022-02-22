@@ -28,7 +28,7 @@ int main(int argc, char *argv[])
         qCritical() << "DRM Buffer is not accessible. Exiting";
         qCoreApp.exit(0);
     }
-    else if (pBuf->isValid())
+    else if (!pBuf->isValid())
     {
         qCritical() << "DRM buffer is not valid. Exiting";
         qCoreApp.exit(0);
@@ -41,6 +41,5 @@ int main(int argc, char *argv[])
 
     //delete pBuf;
 
-    //return qCoreApp.exec();
-    return 0;
+    return qCoreApp.exec();
 }

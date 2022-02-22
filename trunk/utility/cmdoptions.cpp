@@ -39,17 +39,17 @@ void CmdOptions::setCmdOptions(QCoreApplication &coreApp)
 
     QCommandLineOption setOutputFmtOpt(QStringList() << "fmt",
                                        QCoreApplication::translate("main", "set the output format.\n"
-                                                                           "raw - raw image will be saved \n"
-                                                                           "jpeg - image will be converted to jpeg and saved \n"
-                                                                           "png - image will be converted to png and saved \n"
-                                                                           "adb - video will be streamed over adb (experimental) \n"
-                                                                           "udp - video will be streamed over udp \n"),
-                                       QCoreApplication::translate("main", "raw,jpeg,png")
+                                                                           "  raw - raw image will be saved \n"
+                                                                           "  jpeg - image will saved as a jpeg \n"
+                                                                           "  png - image will saved as a png \n"
+                                                                           "  adb - video will be streamed over adb (experimental) \n"
+                                                                           "  udp - video will be streamed over udp \n"),
+                                       QCoreApplication::translate("main", "raw,jpeg,png,adb,udp")
                                        );
 
     QCommandLineOption setOutputIPOpt(QStringList() << "ip",
                                       QCoreApplication::translate("main", "set the stream IP. "),
-                                      QCoreApplication::translate("main", "<ip>:<port>")
+                                      QCoreApplication::translate("main", "ip_addr:port")
                                       );
 
     QCommandLineOption setOutputRotOpt(QStringList() << "r" << "rotation",
@@ -70,8 +70,10 @@ void CmdOptions::setCmdOptions(QCoreApplication &coreApp)
     // add the options
     parser.addOption(configFilePathOpt);
     parser.addOption(setOutputFmtOpt);
+    parser.addOption(setOutputIPOpt);
     parser.addOption(setOutputRotOpt);
     parser.addOption(setOutputFpsOpt);
+    parser.addOption(setOutputFileNameOpt);
 
     // process the options given to the application
     parser.process(coreApp);

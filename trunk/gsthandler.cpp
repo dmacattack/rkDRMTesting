@@ -62,18 +62,22 @@ void gsthandler::start()
     // print out the params
     qDebug() << "selected params:";
     qDebug() << "   format = " << fmt;
-    qDebug() << "   image rotation = " << rotation;
+    qDebug() << "   image rotation = " << degrees;
     qDebug() << "   image filepath = " << filepath;
     qDebug() << "   streaming framerate = " << mFrameRate;
     qDebug() << "   streaming ip = " << streamIp;
 
+    // help out the user
+    fmt = fmt.toLower();
+
+    // do the right thing
     if (fmt == "raw")
     {
         qDebug() << "**** Saving Raw Image ****";
         // save a raw image
         startRawPipeline(filepath, rotation);
     }
-    else if (fmt == "jpeg")
+    else if ((fmt == "jpeg") || (fmt == "jpg"))
     {
         qDebug() << "**** Saving JPEG Image ****";
         // save to a jpeg
