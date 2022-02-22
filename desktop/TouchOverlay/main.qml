@@ -9,6 +9,7 @@ Window
     height: 720
     title: qsTr("touch screen overlay")
     color: "transparent"
+    property string btnTxt: "Connect"
 
 
     // signal to move the mouse
@@ -37,7 +38,7 @@ Window
             Text
             {
                 anchors.centerIn: parent
-                text: "Connect"
+                text: mainWindow.btnTxt
             }
 
             MouseArea

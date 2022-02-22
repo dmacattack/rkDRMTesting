@@ -1,6 +1,7 @@
 #include "tcpclient.hpp"
 #include <QHostAddress>
 #include <QDebug>
+#include <QString>
 
 namespace
 {
@@ -101,13 +102,11 @@ void TCPClient::onTcpDisconnected()
  */
 void TCPClient::sendDgram(TCP::tTcpDataGram dgram)
 {
-    QByteArray data;
-    data.append(dgram.ev);
-    data.append(":");
-    data.append(dgram.x);
-    data.append(":");
-    data.append(dgram.y);
-
+    QString msg = QString("%1:%2:%3")
+            .arg(QString::number(dgram.ev))
+            .arg(QString::number(dgram.x))
+            .arg(QString::number(dgram.y));
+    QByteArray data = msg.toUtf8();
     mpSocket->write(data);
 }
 

@@ -19,13 +19,16 @@ public:
 signals:
 public slots:
 private slots:
-    void onMousePress(int x, int y);
-    void onMouseRelease();
     void onButtonClick(int id);
+    void updateTcpStatus(TCP::eCONN_STATUS status);
+
+private:
+
 
 private:
     TCPClient *mpTcpClient;
     QObject *mpQmlObject;
+    TCP::eCONN_STATUS mTcpStatus;
 };
 
 #endif // UIMAIN_HPP
